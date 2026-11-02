@@ -1,0 +1,948 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Plate Atlas</title>
+<meta name="description" content="Guess which country a dish comes from. Photos and dishes are loaded live from Wikipedia.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+html{-webkit-text-size-adjust:100%}
+body{margin:0}
+img{max-width:100%}
+[hidden]{display:none!important}
+
+/* Layout: one narrow column, like a menu card. Dish card on top, guess input, then guess rows stacked newest-first. */
+:root{
+  color-scheme: dark;
+  --bg:#13111a;
+  --surface:#1d1a26;
+  --surface-2:#262233;
+  --line:#332e42;
+  --fg:#f3eee6;
+  --muted:#a29bb2;
+  --accent:#f2a541;       /* saffron */
+  --accent-ink:#1a1206;
+  --hot:#ff6a4d;
+  --warm:#f3c34f;
+  --cool:#86c1e8;
+  --cold:#6f93f2;
+  --freeze:#b7c6ff;
+  --good:#5fd39a;
+  --bad:#ff7a7a;
+  --f-display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --f-body:"Figtree", "Segoe UI", system-ui, sans-serif;
+  --f-mono:"JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+*{box-sizing:border-box}
+html,body{min-height:100%}
+body{
+  background:var(--bg);
+  background-image:radial-gradient(1200px 500px at 50% -200px, rgba(242,165,65,.10), transparent 70%);
+  color:var(--fg);
+  font-family:var(--f-body);
+  font-size:15px;
+  line-height:1.5;
+  padding-left:max(16px, env(safe-area-inset-left, 0px));
+  padding-right:max(16px, env(safe-area-inset-right, 0px));
+  padding-block:24px 48px;
+}
+.wrap{max-width:640px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+
+header{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.brand h1{font-family:var(--f-display);font-weight:800;font-size:clamp(28px,6vw,38px);letter-spacing:-.02em;margin:0;line-height:1}
+.brand h1 span{color:var(--accent)}
+.brand p{margin:6px 0 0;color:var(--muted);font-size:14px}
+.stats{display:flex;gap:14px;font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.stats div{display:flex;flex-direction:column;align-items:flex-end}
+.stats b{color:var(--fg);font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}
+
+/* Dish card */
+.dish{
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:18px;
+  padding:22px;
+  display:flex;flex-direction:column;gap:14px;
+  position:relative;overflow:hidden;
+}
+.dish::after{ /* plate rim */
+  content:"";position:absolute;right:-70px;top:-70px;width:200px;height:200px;border-radius:50%;
+  border:14px solid rgba(242,165,65,.08);box-shadow:inset 0 0 0 22px rgba(242,165,65,.04);pointer-events:none;
+}
+.photo{margin:-22px -22px 0;position:relative;background:var(--surface-2);aspect-ratio:16/10;max-width:none;overflow:hidden}
+.photo img{display:block;width:100%;height:100%;object-fit:cover;max-width:none}
+.photo .credit{position:absolute;right:8px;bottom:8px;font-size:11px;background:rgba(19,17,26,.75);color:var(--muted);padding:2px 8px;border-radius:6px;text-decoration:none}
+.photo .credit:hover{color:var(--fg)}
+.photo.none{display:none}
+.eyebrow{font-family:var(--f-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+.dish-name{font-family:var(--f-display);font-weight:700;font-size:clamp(24px,5.4vw,32px);line-height:1.1;letter-spacing:-.01em;margin:0;text-wrap:balance;min-height:1.1em}
+.dish-name.locked{color:var(--muted);font-size:17px;font-family:var(--f-body);font-weight:500;display:flex;align-items:center;gap:8px}
+.dish-name.locked .bars{display:inline-flex;gap:5px}
+.dish-name.locked .bars i{display:block;height:14px;border-radius:4px;background:var(--surface-2)}
+.dish-name.reveal{animation:pop .5s ease}
+@keyframes pop{0%{transform:scale(.96);opacity:.3}100%{transform:none;opacity:1}}
+.desc{margin:0;color:#ddd6cb;max-width:62ch}
+.ing-label{font-family:var(--f-mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{background:var(--surface-2);border:1px solid var(--line);border-radius:999px;padding:4px 11px;font-size:13px;color:var(--fg)}
+
+/* Guess bar */
+.status{display:flex;align-items:center;justify-content:center;gap:12px;color:var(--muted);font-size:16px}
+.pips{display:flex;gap:6px}
+.pip{width:30px;height:8px;border-radius:5px;background:var(--surface-2)}
+.pip.used{background:linear-gradient(90deg,var(--hot),var(--warm))}
+.pip.win{background:var(--good)}
+.status b{color:var(--fg);font-family:var(--f-mono);font-size:18px}
+
+.guess-box{position:relative}
+.guess-row{display:flex;gap:8px}
+#guess{
+  flex:1;min-width:0;
+  background:var(--surface);border:1px solid var(--line);border-radius:12px;
+  color:var(--fg);font:inherit;font-size:16px;padding:13px 14px;outline:none;
+}
+#guess:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(242,165,65,.18)}
+#guess::placeholder{color:var(--muted)}
+button{font:inherit;cursor:pointer}
+.btn{
+  background:var(--accent);color:var(--accent-ink);border:0;border-radius:12px;
+  padding:0 20px;font-weight:700;font-size:15px;
+}
+.btn:hover{filter:brightness(1.07)}
+.btn:focus-visible,.opt:focus-visible{outline:2px solid var(--fg);outline-offset:2px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.list{
+  position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:5;
+  background:var(--surface-2);border:1px solid var(--line);border-radius:12px;
+  max-height:260px;overflow-y:auto;padding:4px;margin:0;list-style:none;
+  box-shadow:0 18px 40px rgba(0,0,0,.45);
+}
+.opt{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;cursor:pointer}
+.opt[aria-selected="true"],.opt:hover{background:rgba(242,165,65,.14)}
+.opt .fl{font-size:18px;width:24px;text-align:center}
+.opt.used{opacity:.4;pointer-events:none}
+.msg{min-height:20px;font-size:13px;color:var(--bad);text-align:center}
+
+/* Guesses */
+.guesses{display:flex;flex-direction:column;gap:8px}
+.g{
+  display:grid;grid-template-columns:auto 1fr auto auto;align-items:center;gap:12px;
+  background:var(--surface);border:1px solid var(--line);border-radius:14px;
+  padding:8px 10px 8px 8px;animation:slide .35s ease;
+}
+@keyframes slide{from{transform:translateY(-6px);opacity:0}to{transform:none;opacity:1}}
+.g .flag{font-size:28px;width:44px;height:44px;display:grid;place-items:center;background:var(--surface-2);border-radius:10px}
+.g .nm{min-width:0}
+.g .nm strong{display:block;font-weight:700;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.g .nm small{font-family:var(--f-mono);color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+.pill{border-radius:999px;padding:5px 12px;font-weight:700;font-size:13px;white-space:nowrap}
+.pill.correct{background:rgba(95,211,154,.16);color:var(--good)}
+.pill.hot{background:rgba(255,106,77,.16);color:var(--hot)}
+.pill.warm{background:rgba(243,195,79,.15);color:var(--warm)}
+.pill.cool{background:rgba(134,193,232,.14);color:var(--cool)}
+.pill.cold{background:rgba(111,147,242,.16);color:var(--cold)}
+.pill.freeze{background:rgba(183,198,255,.12);color:var(--freeze)}
+.compass{position:relative;width:46px;height:46px;font-family:var(--f-mono);font-size:9px;color:var(--muted)}
+.compass span{position:absolute}
+.compass .n{top:0;left:50%;transform:translateX(-50%)}
+.compass .s{bottom:0;left:50%;transform:translateX(-50%)}
+.compass .w{left:1px;top:50%;transform:translateY(-50%)}
+.compass .e{right:1px;top:50%;transform:translateY(-50%)}
+.compass svg{position:absolute;inset:0;margin:auto;width:26px;height:26px;transition:transform .6s cubic-bezier(.2,.9,.3,1.2)}
+.compass .check{position:absolute;inset:0;display:grid;place-items:center;color:var(--good);font-size:20px;font-weight:700}
+
+/* Result */
+.result{
+  border-radius:16px;padding:18px 20px;display:flex;flex-direction:column;gap:12px;
+  border:1px solid var(--line);background:var(--surface-2);
+}
+.result.win{border-color:rgba(95,211,154,.45)}
+.result.lose{border-color:rgba(255,122,122,.4)}
+.result h2{margin:0;font-family:var(--f-display);font-size:22px;font-weight:700}
+.result p{margin:0;color:var(--muted)}
+.result p strong{color:var(--fg)}
+.result .btn{align-self:flex-start;padding:12px 22px}
+
+.legend{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;align-items:center;font-size:12px;color:var(--muted)}
+.legend .pill{font-size:11px;padding:3px 9px;font-weight:600}
+
+@media (max-width:440px){
+  .dish{padding:18px}
+  .photo{margin:-18px -18px 0}
+  .g{gap:9px}
+  .g .flag{width:38px;height:38px;font-size:24px}
+  .pill{padding:4px 9px;font-size:12px}
+  .stats{gap:10px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+.photo.loading::before{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.05) 50%,transparent 70%);background-size:200% 100%;animation:shimmer 1.2s linear infinite}
+@keyframes shimmer{from{background-position:200% 0}to{background-position:-200% 0}}
+.photo img{opacity:0;transition:opacity .35s ease}
+.photo img.ready{opacity:1}
+.photo .nophoto{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);font-size:13px}
+.src{font-family:var(--f-mono);font-size:11px;color:var(--muted);letter-spacing:.06em}
+.redact{background:var(--surface-2);color:var(--surface-2);border-radius:3px;padding:0 .2em;user-select:none}
+.loadnote{font-size:12px;color:var(--muted);text-align:center;min-height:16px}
+.result a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <h1>Plate<span>.</span>Atlas</h1>
+      <p>Read the dish. Name the country. Five guesses.</p>
+    </div>
+    <div class="stats" aria-label="Your stats">
+      <div><b id="sStreak">0</b>streak</div>
+      <div><b id="sBest">0</b>best</div>
+      <div><b id="sWon">0/0</b>solved</div>
+    </div>
+  </header>
+
+  <section class="dish" aria-live="polite">
+    <div class="photo loading" id="photo"><img id="dishImg" alt="Photo of the mystery dish"><div class="nophoto" id="nophoto" hidden>No photo for this dish</div><a class="credit" id="credit" target="_blank" rel="noopener" hidden>Photo: Wikimedia Commons</a></div>
+    <div class="eyebrow" id="dishNo">Loading…</div>
+    <h2 class="dish-name locked" id="dishName"></h2>
+    <p class="desc" id="dishDesc"></p>
+    <div class="ing-label">Ingredients</div>
+    <div class="chips" id="dishIng"></div>
+  </section>
+
+  <div class="status"><div class="pips" id="pips"></div><span><b id="left">5</b> guesses left</span></div>
+
+  <div class="guess-box" id="guessBox">
+    <form class="guess-row" id="form" autocomplete="off">
+      <input id="guess" type="text" placeholder="Type a country…" aria-label="Country guess" role="combobox" aria-expanded="false" aria-controls="list" aria-autocomplete="list">
+      <button class="btn" id="submit" type="submit">Guess</button>
+    </form>
+    <ul class="list" id="list" role="listbox" hidden></ul>
+  </div>
+  <div class="msg" id="msg"></div>
+
+  <div class="result" id="result" hidden></div>
+  <div class="guesses" id="guesses"></div>
+
+  <div class="legend">
+    <span>Closest</span>
+    <span class="pill hot">Hot 🔥</span>
+    <span class="pill warm">Warm</span>
+    <span class="pill cool">Cool</span>
+    <span class="pill cold">Cold ❄️</span>
+    <span class="pill freeze">Freezing 🧊</span>
+    <span>Farthest</span>
+  </div>
+  <div class="loadnote" id="loadnote"></div>
+</div>
+
+<script>
+const COUNTRIES = `AF|Afghanistan|33.9|67.7
+AL|Albania|41.2|20.2
+DZ|Algeria|28.0|1.7
+AD|Andorra|42.5|1.5
+AO|Angola|-11.2|17.9
+AG|Antigua and Barbuda|17.1|-61.8
+AR|Argentina|-38.4|-63.6
+AM|Armenia|40.1|45.0
+AU|Australia|-25.3|133.8
+AT|Austria|47.5|14.6
+AZ|Azerbaijan|40.1|47.6
+BS|Bahamas|25.0|-77.4
+BH|Bahrain|26.0|50.6
+BD|Bangladesh|23.7|90.4
+BB|Barbados|13.2|-59.5
+BY|Belarus|53.7|27.9
+BE|Belgium|50.5|4.5
+BZ|Belize|17.2|-88.5
+BJ|Benin|9.3|2.3
+BT|Bhutan|27.5|90.4
+BO|Bolivia|-16.3|-63.6
+BA|Bosnia and Herzegovina|43.9|17.7
+BW|Botswana|-22.3|24.7
+BR|Brazil|-14.2|-51.9
+BN|Brunei|4.5|114.7
+BG|Bulgaria|42.7|25.5
+BF|Burkina Faso|12.2|-1.6
+BI|Burundi|-3.4|29.9
+KH|Cambodia|12.6|105.0
+CM|Cameroon|7.4|12.4
+CA|Canada|56.1|-106.3
+CV|Cape Verde|16.0|-24.0
+CF|Central African Republic|6.6|20.9
+TD|Chad|15.5|18.7
+CL|Chile|-35.7|-71.5
+CN|China|35.9|104.2
+CO|Colombia|4.6|-74.3
+KM|Comoros|-11.9|43.9
+CG|Congo|-0.2|15.8
+CD|DR Congo|-4.0|21.8
+CR|Costa Rica|9.7|-83.8
+CI|Côte d'Ivoire|7.5|-5.5
+HR|Croatia|45.1|15.2
+CU|Cuba|21.5|-77.8
+CY|Cyprus|35.1|33.4
+CZ|Czechia|49.8|15.5
+DK|Denmark|56.3|9.5
+DJ|Djibouti|11.8|42.6
+DM|Dominica|15.4|-61.4
+DO|Dominican Republic|18.7|-70.2
+EC|Ecuador|-1.8|-78.2
+EG|Egypt|26.8|30.8
+SV|El Salvador|13.8|-88.9
+GQ|Equatorial Guinea|1.6|10.3
+ER|Eritrea|15.2|39.8
+EE|Estonia|58.6|25.0
+SZ|Eswatini|-26.5|31.5
+ET|Ethiopia|9.1|40.5
+FJ|Fiji|-17.7|178.1
+FI|Finland|61.9|25.7
+FR|France|46.2|2.2
+GA|Gabon|-0.8|11.6
+GM|Gambia|13.4|-15.3
+GE|Georgia|42.3|43.4
+DE|Germany|51.2|10.5
+GH|Ghana|7.9|-1.0
+GR|Greece|39.1|21.8
+GD|Grenada|12.1|-61.7
+GT|Guatemala|15.8|-90.2
+GN|Guinea|9.9|-9.7
+GW|Guinea-Bissau|11.8|-15.2
+GY|Guyana|4.9|-58.9
+HT|Haiti|19.0|-72.3
+HN|Honduras|15.2|-86.2
+HU|Hungary|47.2|19.5
+IS|Iceland|65.0|-19.0
+IN|India|20.6|79.0
+ID|Indonesia|-0.8|113.9
+IR|Iran|32.4|53.7
+IQ|Iraq|33.2|43.7
+IE|Ireland|53.4|-8.2
+IL|Israel|31.0|34.9
+IT|Italy|41.9|12.6
+JM|Jamaica|18.1|-77.3
+JP|Japan|36.2|138.3
+JO|Jordan|30.6|36.2
+KZ|Kazakhstan|48.0|66.9
+KE|Kenya|0.0|37.9
+KW|Kuwait|29.3|47.5
+KG|Kyrgyzstan|41.2|74.8
+LA|Laos|19.9|102.5
+LV|Latvia|56.9|24.6
+LB|Lebanon|33.9|35.9
+LS|Lesotho|-29.6|28.2
+LR|Liberia|6.4|-9.4
+LY|Libya|26.3|17.2
+LI|Liechtenstein|47.2|9.55
+LT|Lithuania|55.2|23.9
+LU|Luxembourg|49.8|6.1
+MG|Madagascar|-18.8|46.9
+MW|Malawi|-13.3|34.3
+MY|Malaysia|4.2|102.0
+MV|Maldives|3.2|73.2
+ML|Mali|17.6|-4.0
+MT|Malta|35.9|14.4
+MR|Mauritania|21.0|-10.9
+MU|Mauritius|-20.3|57.6
+MX|Mexico|23.6|-102.6
+MD|Moldova|47.4|28.4
+MC|Monaco|43.7|7.4
+MN|Mongolia|46.9|103.8
+ME|Montenegro|42.7|19.4
+MA|Morocco|31.8|-7.1
+MZ|Mozambique|-18.7|35.5
+MM|Myanmar|21.9|96.0
+NA|Namibia|-23.0|18.5
+NP|Nepal|28.4|84.1
+NL|Netherlands|52.1|5.3
+NZ|New Zealand|-40.9|174.9
+NI|Nicaragua|12.9|-85.2
+NE|Niger|17.6|8.1
+NG|Nigeria|9.1|8.7
+KP|North Korea|40.3|127.5
+MK|North Macedonia|41.6|21.7
+NO|Norway|60.5|8.5
+OM|Oman|21.5|55.9
+PK|Pakistan|30.4|69.3
+PS|Palestine|31.9|35.2
+PA|Panama|8.5|-80.8
+PG|Papua New Guinea|-6.3|144.0
+PY|Paraguay|-23.4|-58.4
+PE|Peru|-9.2|-75.0
+PH|Philippines|12.9|121.8
+PL|Poland|51.9|19.1
+PT|Portugal|39.4|-8.2
+PR|Puerto Rico|18.2|-66.6
+QA|Qatar|25.4|51.2
+RO|Romania|45.9|25.0
+RU|Russia|61.5|105.3
+RW|Rwanda|-1.9|29.9
+KN|Saint Kitts and Nevis|17.4|-62.8
+LC|Saint Lucia|13.9|-61.0
+VC|Saint Vincent and the Grenadines|13.3|-61.2
+WS|Samoa|-13.8|-172.1
+SM|San Marino|43.9|12.5
+ST|São Tomé and Príncipe|0.2|6.6
+SA|Saudi Arabia|23.9|45.1
+SN|Senegal|14.5|-14.5
+RS|Serbia|44.0|21.0
+SC|Seychelles|-4.7|55.5
+SL|Sierra Leone|8.5|-11.8
+SG|Singapore|1.35|103.8
+SK|Slovakia|48.7|19.7
+SI|Slovenia|46.1|15.0
+SB|Solomon Islands|-9.6|160.2
+SO|Somalia|5.2|46.2
+ZA|South Africa|-30.6|22.9
+KR|South Korea|35.9|127.8
+SS|South Sudan|6.9|31.3
+ES|Spain|40.5|-3.7
+LK|Sri Lanka|7.9|80.8
+SD|Sudan|12.9|30.2
+SR|Suriname|3.9|-56.0
+SE|Sweden|60.1|18.6
+CH|Switzerland|46.8|8.2
+SY|Syria|34.8|39.0
+TW|Taiwan|23.7|121.0
+TJ|Tajikistan|38.9|71.3
+TZ|Tanzania|-6.4|34.9
+TH|Thailand|15.9|101.0
+TL|Timor-Leste|-8.9|125.7
+TG|Togo|8.6|0.8
+TO|Tonga|-21.2|-175.2
+TT|Trinidad and Tobago|10.7|-61.2
+TN|Tunisia|33.9|9.5
+TR|Turkey|39.0|35.2
+TM|Turkmenistan|39.0|59.6
+UG|Uganda|1.4|32.3
+UA|Ukraine|48.4|31.2
+AE|United Arab Emirates|23.4|53.8
+GB|United Kingdom|55.4|-3.4
+US|United States|37.1|-95.7
+UY|Uruguay|-32.5|-55.8
+UZ|Uzbekistan|41.4|64.6
+VU|Vanuatu|-15.4|167.0
+VE|Venezuela|6.4|-66.6
+VN|Vietnam|14.1|108.3
+YE|Yemen|15.6|48.5
+ZM|Zambia|-13.1|27.8
+ZW|Zimbabwe|-19.0|29.2`.split('\n').map(l=>{const [c,n,la,lo]=l.split('|');return {c,n,la:+la,lo:+lo};});
+const BY_CODE = Object.fromEntries(COUNTRIES.map(c=>[c.c,c]));
+
+// Other names a country goes by, plus well-known regions/cities that would give it away.
+const ALIASES = {
+  GB:"United Kingdom,UK,Britain,Great Britain,England,Scotland,Wales,Northern Ireland,Cornwall,London",
+  US:"United States of America,USA,America,New Orleans,Louisiana,Texas,New England,Chicago,New York",
+  CZ:"Czech Republic,Bohemia,Prague", CI:"Ivory Coast,Cote d'Ivoire", CD:"Democratic Republic of the Congo,DRC,Congo-Kinshasa,Kinshasa",
+  CG:"Republic of the Congo,Congo-Brazzaville,Brazzaville", MM:"Burma,Yangon", TL:"East Timor", SZ:"Swaziland",
+  MK:"Macedonia,Republic of North Macedonia", TR:"Türkiye,Turkiye,Istanbul,Anatolia,Bursa", CV:"Cabo Verde", GM:"The Gambia", BS:"The Bahamas",
+  KR:"Korea,Republic of Korea,Seoul,Jeonju", KP:"Democratic People's Republic of Korea,Pyongyang", CN:"People's Republic of China,Sichuan,Szechuan,Canton,Guangdong,Beijing,Peking,Shanghai,Hong Kong,Macau,Hainan,Yunnan,Hunan",
+  TW:"Republic of China,Taipei", VN:"Viet Nam,Hanoi,Saigon,Ho Chi Minh City,Hue", LA:"Lao PDR,Vientiane,Luang Prabang", RU:"Russian Federation,Siberia,Moscow",
+  IR:"Persia,Tehran,Isfahan,Gilan", NL:"Holland,Amsterdam", PS:"State of Palestine,Gaza,West Bank,Nablus", BA:"Bosnia,Herzegovina,Sarajevo",
+  AE:"UAE,Emirates,Dubai,Abu Dhabi", SA:"KSA,Hejaz,Najd,Riyadh,Mecca,Jeddah", NZ:"Aotearoa", LK:"Ceylon,Colombo", CA:"Quebec,Québec,Montreal,Nova Scotia,Newfoundland",
+  ES:"Valencia,Catalonia,Andalusia,Madrid,Barcelona,Galicia,Asturias,Basque Country,Castile", IT:"Naples,Sicily,Rome,Milan,Tuscany,Bologna,Venice,Lombardy,Piedmont,Liguria,Sardinia,Lazio,Emilia-Romagna",
+  FR:"Paris,Provence,Burgundy,Normandy,Brittany,Alsace,Lyon,Marseille", JP:"Osaka,Tokyo,Hiroshima,Kyoto,Okinawa,Hokkaido", IN:"Kerala,Punjab,Bengal,Goa,Hyderabad,Mumbai,Delhi,Chennai,Gujarat,Kashmir,Rajasthan,Karnataka,Tamil Nadu,Bihar,Lucknow,Awadh",
+  PK:"Lahore,Karachi,Sindh,Peshawar", MX:"Puebla,Oaxaca,Yucatán,Yucatan,Jalisco,Veracruz,Mexico City", BR:"Bahia,Rio de Janeiro,São Paulo,Sao Paulo,Minas Gerais",
+  DE:"Bavaria,Swabia,Berlin,Rhineland,Saxony,Thuringia", AT:"Vienna,Tyrol,Salzburg", CH:"Geneva,Zurich,Bern", GR:"Athens,Crete", PE:"Lima,Cusco",
+  ID:"Java,Sumatra,Bali,Jakarta,Padang", MY:"Penang,Malacca,Kuala Lumpur,Borneo,Sarawak,Sabah", PH:"Manila,Luzon,Visayas,Mindanao", TH:"Bangkok,Isan,Chiang Mai",
+  EG:"Cairo,Alexandria", MA:"Marrakesh,Fez,Casablanca", NG:"Lagos", ET:"Addis Ababa", GE:"Tbilisi,Adjara,Imereti", UZ:"Samarkand,Tashkent,Bukhara",
+  LB:"Beirut", SY:"Damascus,Aleppo", IQ:"Baghdad,Mosul,Basra", JO:"Amman", YE:"Aden,Sanaa", OM:"Muscat", BH:"Manama", KW:"Kuwait City", QA:"Doha",
+  HU:"Budapest", PL:"Kraków,Krakow,Warsaw", UA:"Kyiv,Kiev,Odesa", BE:"Brussels,Flanders,Wallonia,Liège", PT:"Lisbon,Porto,Belém,Azores,Madeira",
+  IE:"Dublin", SE:"Stockholm", NO:"Oslo", DK:"Copenhagen", FI:"Helsinki,Karelia", IS:"Reykjavík,Reykjavik", CU:"Havana", PR:"San Juan", JM:"Kingston",
+  CO:"Bogotá,Bogota,Antioquia,Medellín", VE:"Caracas", AR:"Buenos Aires,Pampas", CL:"Santiago", BO:"La Paz", AU:"Sydney,Melbourne,Queensland",
+};
+const DEMONYMS = `AF|Afghan;AL|Albanian;DZ|Algerian;AD|Andorran;AO|Angolan;AG|Antiguan,Barbudan;AR|Argentine,Argentinian,Argentinean;AM|Armenian;AU|Australian,Aussie;AT|Austrian,Viennese,Tyrolean;AZ|Azerbaijani,Azeri;BS|Bahamian;BH|Bahraini;BD|Bangladeshi;BB|Barbadian,Bajan;BY|Belarusian;BE|Belgian,Flemish,Walloon;BZ|Belizean;BJ|Beninese;BT|Bhutanese;BO|Bolivian;BA|Bosnian,Herzegovinian;BW|Botswanan,Motswana;BR|Brazilian;BN|Bruneian;BG|Bulgarian;BF|Burkinabé,Burkinabe;BI|Burundian;KH|Cambodian,Khmer;CM|Cameroonian;CA|Canadian,Québécois,Quebecois,Acadian;CV|Cape Verdean;CF|Central African;TD|Chadian;CL|Chilean;CN|Chinese,Cantonese,Sichuanese,Hokkien,Hakka,Teochew,Uyghur,Uighur;CO|Colombian;KM|Comorian;CG|Congolese;CD|Congolese;CR|Costa Rican;CI|Ivorian;HR|Croatian,Dalmatian;CU|Cuban;CY|Cypriot;CZ|Czech,Bohemian;DK|Danish,Dane;DJ|Djiboutian;DM|Dominican;DO|Dominican;EC|Ecuadorian;EG|Egyptian;SV|Salvadoran,Salvadorian;GQ|Equatoguinean;ER|Eritrean;EE|Estonian;SZ|Swazi;ET|Ethiopian,Amharic;FJ|Fijian;FI|Finnish,Finn,Karelian;FR|French,Parisian,Provençal,Breton,Alsatian,Lyonnaise,Burgundian,Norman;GA|Gabonese;GM|Gambian;GE|Georgian,Adjarian,Megrelian;DE|German,Bavarian,Swabian;GH|Ghanaian;GR|Greek,Hellenic,Cretan;GD|Grenadian;GT|Guatemalan;GN|Guinean;GW|Bissau-Guinean;GY|Guyanese;HT|Haitian;HN|Honduran;HU|Hungarian,Magyar;IS|Icelandic,Icelander;IN|Indian,Bengali,Punjabi,Gujarati,Tamil,Keralan,Goan,Kashmiri,Mughal,Hyderabadi,Rajasthani,Marathi;ID|Indonesian,Javanese,Sundanese,Minangkabau,Balinese,Padang;IR|Iranian,Persian;IQ|Iraqi;IE|Irish,Gaelic;IL|Israeli;IT|Italian,Tuscan,Neapolitan,Sicilian,Roman,Milanese,Venetian,Lombard,Bolognese,Genoese,Sardinian,Piedmontese;JM|Jamaican;JP|Japanese,Okinawan;JO|Jordanian;KZ|Kazakh,Kazakhstani;KE|Kenyan;KW|Kuwaiti;KG|Kyrgyz;LA|Lao,Laotian;LV|Latvian;LB|Lebanese;LS|Basotho,Mosotho;LR|Liberian;LY|Libyan;LI|Liechtensteiner;LT|Lithuanian;LU|Luxembourgish;MG|Malagasy;MW|Malawian;MY|Malaysian,Malay,Nyonya,Peranakan;MV|Maldivian;ML|Malian;MT|Maltese;MR|Mauritanian;MU|Mauritian;MX|Mexican,Poblano,Oaxacan,Yucatecan,Aztec;MD|Moldovan;MC|Monégasque,Monegasque;MN|Mongolian,Mongol;ME|Montenegrin;MA|Moroccan;MZ|Mozambican;MM|Burmese;NA|Namibian;NP|Nepali,Nepalese,Newar,Newari;NL|Dutch;NZ|Kiwi,Māori,Maori;NI|Nicaraguan;NE|Nigerien;NG|Nigerian,Yoruba,Igbo,Hausa;KP|North Korean;MK|Macedonian;NO|Norwegian;OM|Omani;PK|Pakistani,Sindhi,Pashtun,Lahori;PS|Palestinian;PA|Panamanian;PG|Papuan;PY|Paraguayan,Guarani;PE|Peruvian,Inca,Incan;PH|Filipino,Philippine,Pinoy,Tagalog,Visayan,Kapampangan,Ilocano;PL|Polish;PT|Portuguese;PR|Puerto Rican,Boricua;QA|Qatari;RO|Romanian;RU|Russian,Siberian,Tatar;RW|Rwandan;KN|Kittitian,Nevisian;LC|Saint Lucian;VC|Vincentian;WS|Samoan;SM|Sammarinese;ST|Santomean;SA|Saudi,Hejazi,Najdi;SN|Senegalese,Wolof;RS|Serbian,Serb;SC|Seychellois;SL|Sierra Leonean;SG|Singaporean;SK|Slovak;SI|Slovene,Slovenian;SB|Solomon Islander;SO|Somali;ZA|South African,Afrikaans,Afrikaner,Cape Malay,Zulu,Xhosa;KR|South Korean,Korean;SS|South Sudanese;ES|Spanish,Valencian,Catalan,Andalusian,Basque,Galician,Asturian,Castilian;LK|Sri Lankan,Sinhala,Sinhalese;SD|Sudanese;SR|Surinamese;SE|Swedish,Swede;CH|Swiss;SY|Syrian;TW|Taiwanese;TJ|Tajik;TZ|Tanzanian,Zanzibari;TH|Thai;TL|Timorese;TG|Togolese;TO|Tongan;TT|Trinidadian,Tobagonian;TN|Tunisian;TR|Turkish,Ottoman,Anatolian;TM|Turkmen;UG|Ugandan;UA|Ukrainian;AE|Emirati;GB|British,English,Scottish,Welsh,Scots,Cornish,Yorkshire;US|American,Cajun,Southern United States,Tex-Mex,Hawaiian;UY|Uruguayan;UZ|Uzbek;VU|Ni-Vanuatu;VE|Venezuelan;VN|Vietnamese;YE|Yemeni;ZM|Zambian;ZW|Zimbabwean`;
+// Regional words that hint at an area without naming one country.
+const HINT_WORDS = "Latin America,South America,Central America,North America,West Africa,East Africa,North Africa,Southern Africa,Southeast Asia,South Asia,East Asia,Central Asia,Arab,Arabs,Arabic,Arabian,Levantine,Levant,Maghrebi,Maghreb,Middle Eastern,Middle East,Kurdish,Berber,Amazigh,Creole,Andean,Balkan,Balkans,Scandinavian,Nordic,Slavic,Baltic,Iberian,Caucasian,Caucasus,Bedouin,Mayan,Polynesian,Melanesian,Micronesian,Hispanic,Latin American,South American,Central American,North American,Caribbean,West Indian,East African,West African,North African,Southern African,Central African,Horn of Africa,Southeast Asian,South Asian,East Asian,Central Asian,West Asian,Mediterranean,Sephardic,Ashkenazi,Jewish,Hebrew,Yiddish,Quechua,Aymara,Mapuche,Celtic,Viking,Moorish,Tibetan,Swahili,Gulf,Persian Gulf,Indian subcontinent,Subcontinent,Himalayan,Himalayas,Pacific Islands,Pacific Islander,Native American,Indigenous,Soviet,Habsburg,Austro-Hungarian,Yugoslav,Yugoslavia";
+
+// [name, country code, description, ingredients] — hand-written clues
+const DISHES = [
+["Machboos","BH","Meat is simmered with dried black lime and a warm spice blend, then the rice is cooked in that same rich broth so every grain takes on the flavour. Often served for Friday family lunches on a small island in the Gulf.",["Basmati rice","Chicken or lamb","Dried black lime","Baharat spice","Onion","Tomato","Rosewater","Cardamom"]],
+["Kabsa","SA","Long-grain rice cooked in a spiced tomato broth, crowned with roasted meat, toasted almonds and raisins, and shared from one large platter on the floor.",["Long-grain rice","Chicken or lamb","Tomato","Cinnamon","Cardamom","Raisins","Almonds","Dried lime"]],
+["Al Harees","AE","Wheat and meat slow-cooked for hours, then beaten into a smooth, porridge-like paste. A staple of weddings and the holy month of fasting.",["Whole wheat","Lamb or chicken","Ghee","Salt","Cinnamon"]],
+["Shuwa","OM","Meat rubbed with a thick spice paste, wrapped in banana or palm leaves and buried in an underground sand oven for up to two days during festivals.",["Lamb or goat","Garlic","Cumin","Chili","Vinegar","Coriander seed","Palm leaves"]],
+["Saltah","YE","A bubbling stew served still boiling in a stone pot, topped with a frothy fenugreek foam and eaten by scooping with flatbread.",["Meat broth","Fenugreek","Tomato","Potato","Zhoug chili paste","Garlic","Flatbread"]],
+["Mansaf","JO","Lamb cooked in a sauce of fermented dried yogurt, served over rice on a thin flatbread and eaten by hand from a communal tray.",["Lamb","Jameed (dried yogurt)","Rice","Shrak flatbread","Pine nuts","Almonds","Ghee"]],
+["Musakhan","PS","Taboon flatbread soaked in olive oil and piled with roasted chicken and heaps of slowly cooked onions dusted with a tart, dark red spice.",["Chicken","Taboon bread","Onions","Sumac","Olive oil","Pine nuts","Allspice"]],
+["Tabbouleh","LB","A bright herb salad that is mostly parsley, with only a little grain, dressed sharply with lemon and olive oil.",["Flat-leaf parsley","Fine bulgur","Tomato","Mint","Spring onion","Lemon juice","Olive oil"]],
+["Masgouf","IQ","Freshwater fish butterflied and propped up beside an open wood fire to roast slowly on the riverbank, then served with pickles and flatbread.",["Carp","Salt","Tamarind","Turmeric","Tomato","Onion","Flatbread"]],
+["Fesenjan","IR","A dark, glossy stew that balances sweet and sour, made from ground walnuts slowly cooked down with pomegranate molasses.",["Chicken or duck","Walnuts","Pomegranate molasses","Onion","Turmeric","Cinnamon","Saffron rice"]],
+["İskender Kebap","TR","Thin slices of rotisserie-cooked meat laid over bread cubes, covered in tomato sauce and finished at the table with sizzling browned butter and yogurt.",["Lamb or beef","Pide bread","Tomato sauce","Butter","Yogurt","Roasted peppers"]],
+["Koshari","EG","A street-cart carbohydrate pile of rice, lentils and macaroni, topped with spiced tomato sauce, garlic vinegar and crispy fried onions.",["Rice","Brown lentils","Macaroni","Chickpeas","Tomato sauce","Garlic vinegar","Fried onions"]],
+["Pastilla","MA","A flaky pie of paper-thin pastry hiding spiced poultry and almonds, finished with a surprising dusting of powdered sugar and cinnamon.",["Warqa pastry","Pigeon or chicken","Almonds","Eggs","Cinnamon","Powdered sugar","Saffron","Orange blossom water"]],
+["Brik","TN","A thin pastry triangle folded around a whole raw egg and fried until crisp, so the yolk stays runny inside.",["Malsouka pastry","Egg","Tuna","Capers","Parsley","Harissa","Lemon"]],
+["Doro Wat","ET","A deeply spiced chicken stew with whole hard-boiled eggs, built on onions cooked for an hour without oil, served on a spongy sour flatbread.",["Chicken","Red onions","Berbere spice","Niter kibbeh (spiced butter)","Hard-boiled eggs","Injera"]],
+["Egusi Soup","NG","A thick soup made with ground melon seeds that clump like scrambled egg, cooked with leafy greens and palm oil and eaten with pounded yam.",["Ground melon seeds","Palm oil","Bitter leaf or spinach","Stockfish","Crayfish","Scotch bonnet","Pounded yam"]],
+["Waakye","GH","Rice and beans cooked together with dried sorghum leaves, which turn the dish a deep reddish-brown. A favourite breakfast sold from roadside stalls.",["Rice","Black-eyed beans","Sorghum leaves","Shito pepper sauce","Spaghetti","Boiled egg","Fried plantain"]],
+["Thieboudienne","SN","Fish stuffed with a parsley-garlic paste and simmered with vegetables in tomato broth; the rice is then cooked in that broth and the crispy bottom layer is prized.",["Grouper","Broken rice","Tomato paste","Cassava","Cabbage","Carrot","Tamarind","Parsley"]],
+["Nyama Choma","KE","Goat or beef grilled slowly over charcoal and chopped on a wooden board, eaten with a stiff maize porridge and a fresh tomato-onion salad.",["Goat meat","Salt","Maize flour (ugali)","Tomato","Onion","Chili","Coriander"]],
+["Bobotie","ZA","Curried minced meat with dried fruit, baked under a golden savoury egg custard and served with yellow rice.",["Minced beef or lamb","Curry powder","Dried apricots","Bread soaked in milk","Eggs","Bay leaves","Chutney"]],
+["Sadza ne Nyama","ZW","A smooth, stiff white maize porridge shaped by hand and used to scoop up stewed beef and greens.",["White maize meal","Beef","Tomato","Onion","Collard greens","Peanut butter"]],
+["Romazava","MG","A light, peppery beef and greens broth flavoured with a herb that makes your tongue tingle and go slightly numb.",["Beef","Paracress (anamalaho)","Mustard greens","Tomato","Ginger","Garlic","Rice"]],
+["Moambe Chicken","CD","Chicken stewed in a rich sauce made from the pulp of palm nuts, served with cassava or rice.",["Chicken","Palm nut pulp","Onion","Tomato","Garlic","Chili","Cassava leaves"]],
+["Ndolé","CM","A stew of bitter leaves washed many times, then cooked with a creamy paste of boiled peanuts and shrimp or beef.",["Bitter leaves","Peanuts","Shrimp","Beef","Onion","Palm oil","Fried plantain"]],
+["Muamba de Galinha","AO","Chicken stewed with red palm oil, okra and squash, eaten alongside a gluey cassava porridge.",["Chicken","Palm oil","Okra","Squash","Garlic","Chili","Funge (cassava porridge)"]],
+["Cachupa","CV","A slow-cooked hominy and bean stew from a volcanic Atlantic archipelago; the leftovers are fried for breakfast the next day.",["Hominy corn","Beans","Pork","Sausage","Cassava","Sweet potato","Cabbage"]],
+["Pastel de Nata","PT","A small tart with flaky, spiralled pastry and a blistered egg custard filling, eaten warm with a dusting of cinnamon.",["Puff pastry","Egg yolks","Milk","Sugar","Lemon peel","Cinnamon stick"]],
+["Paella","ES","Saffron rice cooked in a wide, shallow pan over open flame, never stirred, so a toasted crust forms on the bottom.",["Bomba rice","Saffron","Chicken","Rabbit","Green beans","Butter beans","Olive oil","Paprika"]],
+["Coq au Vin","FR","Rooster braised slowly in red wine from the region, with lardons, mushrooms and small pearl onions.",["Chicken","Red wine","Bacon lardons","Mushrooms","Pearl onions","Thyme","Garlic","Butter"]],
+["Cacio e Pepe","IT","A three-ingredient pasta where starchy cooking water turns grated sheep's cheese and cracked pepper into a glossy sauce.",["Tonnarelli pasta","Pecorino Romano","Black pepper","Pasta water"]],
+["Sauerbraten","DE","A beef roast marinated for days in vinegar and spices, then braised and served with a sweet-sour gravy thickened with gingerbread.",["Beef roast","Red wine vinegar","Juniper berries","Cloves","Bay leaves","Gingerbread","Red cabbage","Potato dumplings"]],
+["Kaiserschmarrn","AT","A fluffy, caramelised pancake torn into pieces in the pan and served under a snowfall of powdered sugar with plum compote.",["Eggs","Flour","Milk","Raisins soaked in rum","Butter","Powdered sugar","Plum compote"]],
+["Fondue","CH","Alpine cheeses melted with white wine in a communal pot; diners dip cubes of bread on long forks. Whoever drops their bread pays a forfeit.",["Gruyère","Vacherin","White wine","Garlic","Kirsch","Cornstarch","Crusty bread"]],
+["Moussaka","GR","Layers of fried aubergine and spiced minced lamb in tomato, baked under a thick, golden blanket of béchamel.",["Aubergine","Minced lamb","Tomato","Cinnamon","Béchamel sauce","Potato","Olive oil"]],
+["Gulyás","HU","A herdsman's soup-stew of beef, onions and plenty of sweet red paprika, traditionally cooked in a kettle over an open fire.",["Beef shin","Onions","Sweet paprika","Caraway","Potato","Carrot","Pinched egg noodles"]],
+["Pierogi","PL","Half-moon dumplings boiled then fried in butter, with fillings ranging from potato and farmer's cheese to sauerkraut and mushroom.",["Flour","Potato","Twaróg cheese","Onion","Butter","Sour cream","Sauerkraut"]],
+["Svíčková","CZ","Marinated beef sirloin in a smooth, creamy root-vegetable sauce, served with sliced bread dumplings, cranberries and whipped cream.",["Beef sirloin","Root vegetables","Cream","Bay leaf","Allspice","Bread dumplings","Cranberries"]],
+["Bryndzové Halušky","SK","Small potato dumplings tossed with a soft, tangy sheep's cheese and topped with crispy fried bacon.",["Potato","Flour","Bryndza sheep cheese","Bacon","Salt"]],
+["Borscht","UA","A deep ruby soup of beetroot and cabbage, served with a spoonful of sour cream and garlic bread rolls called pampushky.",["Beetroot","Cabbage","Potato","Carrot","Beef stock","Dill","Sour cream","Garlic"]],
+["Pelmeni","RU","Small, thin-skinned meat dumplings traditionally made in huge batches and frozen outdoors in the long winter.",["Flour","Egg","Minced pork and beef","Onion","Black pepper","Sour cream","Butter"]],
+["Sarmale","RO","Cabbage leaves pickled in brine, rolled around rice and minced pork, and simmered for hours. Served with polenta and sour cream at holidays.",["Pickled cabbage","Minced pork","Rice","Onion","Dill","Smoked bacon","Polenta","Sour cream"]],
+["Banitsa","BG","Hand-stretched filo layered with eggs, yogurt and crumbled white brined cheese, baked until crisp. Lucky charms are hidden inside on New Year's Eve.",["Filo pastry","Sirene cheese","Eggs","Yogurt","Butter","Baking soda"]],
+["Ćevapi","BA","Little skinless grilled sausages of minced meat, stuffed into soft flatbread pockets with raw onion and a creamy dairy spread.",["Minced beef and lamb","Garlic","Somun flatbread","Raw onion","Kajmak","Ajvar"]],
+["Smørrebrød","DK","Open-faced sandwiches on dense dark rye bread, piled with carefully arranged toppings and eaten with a knife and fork.",["Rye bread","Pickled herring","Butter","Boiled egg","Shrimp","Remoulade","Dill","Red onion"]],
+["Köttbullar","SE","Small pan-fried meatballs served with creamy brown gravy, mashed potatoes and tart lingonberry jam.",["Minced beef and pork","Breadcrumbs","Allspice","Cream gravy","Potatoes","Lingonberry jam","Pickled cucumber"]],
+["Fårikål","NO","Mutton and cabbage layered in a pot with whole black peppercorns and simply stewed. It has its own celebration day each autumn.",["Mutton","Cabbage","Whole black peppercorns","Salt","Boiled potatoes"]],
+["Karjalanpiirakka","FI","Thin rye crusts crimped by hand around a filling of creamy rice porridge, topped with chopped egg butter.",["Rye flour","Rice porridge","Milk","Butter","Hard-boiled eggs"]],
+["Stamppot","NL","Potatoes mashed together with kale or other winter vegetables, with a smoked sausage on top and a pool of gravy in the middle.",["Potatoes","Kale","Smoked sausage","Butter","Milk","Mustard"]],
+["Moules-Frites","BE","A steaming pot of mussels cooked in white wine and celery, served with double-fried chips and mayonnaise.",["Mussels","White wine","Celery","Shallots","Parsley","Potatoes","Mayonnaise"]],
+["Colcannon","IE","Buttery mashed potato folded with cabbage or kale and spring onions. Coins and charms are sometimes hidden in it for Halloween.",["Potatoes","Cabbage or kale","Spring onions","Butter","Milk"]],
+["Shepherd's Pie","GB","Minced lamb in rich gravy with vegetables, topped with mashed potato and baked until the ridges brown.",["Minced lamb","Onion","Carrot","Peas","Worcestershire sauce","Potatoes","Butter"]],
+["Hákarl","IS","Shark meat that is fermented and hung to dry for months. Its ammonia smell is famous and it is usually chased with a strong caraway spirit.",["Greenland shark","Salt","Time","Brennivín (to wash it down)"]],
+["Pastizzi","MT","Diamond-shaped flaky pastries filled with ricotta or mushy peas, sold for coins from little shops all over a Mediterranean island.",["Flaky pastry","Ricotta","Mushy peas","Eggs","Salt"]],
+["Khachapuri","GE","A boat-shaped bread filled with molten cheese, topped with a raw egg yolk and a pat of butter that you stir in at the table.",["Bread dough","Sulguni cheese","Imeruli cheese","Egg yolk","Butter"]],
+["Plov","UZ","Rice, carrots and lamb cooked in a huge cast-iron pot, with a whole head of garlic buried in the middle. Men often cook it for crowds at weddings.",["Rice","Lamb","Yellow carrots","Onions","Cumin","Whole garlic","Chickpeas","Cottonseed oil"]],
+["Beshbarmak","KZ","Boiled horse meat or mutton over wide hand-cut noodles. The name means \"five fingers\" because it is eaten by hand.",["Horse meat or mutton","Flat noodles","Onion","Broth","Black pepper"]],
+["Buuz","MN","Steamed dumplings of mutton and onion pinched shut with a small hole on top, made by the hundreds for the Lunar New Year.",["Mutton","Onion","Garlic","Flour","Salt","Caraway"]],
+["Mapo Tofu","CN","Soft tofu in a fiery red sauce of fermented broad bean paste and minced meat, with a peppercorn that numbs the lips.",["Silken tofu","Minced pork","Doubanjiang","Sichuan peppercorns","Chili oil","Garlic","Spring onion"]],
+["Okonomiyaki","JP","A savoury cabbage pancake cooked on a hot griddle, brushed with a sweet brown sauce and topped with mayonnaise and fish flakes that seem to dance in the heat.",["Cabbage","Flour","Dashi","Egg","Pork belly","Okonomi sauce","Mayonnaise","Bonito flakes"]],
+["Bibimbap","KR","A hot stone bowl of rice topped with neat sections of seasoned vegetables, beef and a fried egg, all mixed together with a spicy-sweet chili paste.",["Rice","Beef","Spinach","Bean sprouts","Carrot","Fried egg","Gochujang","Sesame oil"]],
+["Phở","VN","A clear, aromatic beef broth simmered with charred onion, ginger and star anise, poured over rice noodles and thin slices of raw beef that cook in the bowl.",["Rice noodles","Beef bones","Star anise","Charred ginger","Cinnamon","Fish sauce","Thai basil","Lime"]],
+["Som Tam","TH","Shredded unripe papaya pounded in a clay mortar with chili, lime, fish sauce and palm sugar until sour, salty, sweet and very hot.",["Green papaya","Bird's eye chili","Lime","Fish sauce","Palm sugar","Peanuts","Dried shrimp","Cherry tomatoes"]],
+["Larb","LA","A warm minced-meat salad tossed with lime, fish sauce, fresh herbs and toasted ground rice, eaten with sticky rice by hand.",["Minced pork or chicken","Toasted rice powder","Lime","Fish sauce","Mint","Shallots","Chili","Sticky rice"]],
+["Fish Amok","KH","Fish in a silky coconut curry custard flavoured with lemongrass paste, steamed in a cup made of banana leaf.",["Freshwater fish","Coconut milk","Kroeung paste","Egg","Noni leaves","Banana leaf"]],
+["Mohinga","MM","A rice noodle soup in a fish broth thickened with chickpea flour and lemongrass, widely eaten for breakfast.",["Rice vermicelli","Catfish","Lemongrass","Banana stem","Chickpea flour","Fish sauce","Crispy fritters","Boiled egg"]],
+["Nasi Lemak","MY","Rice steamed in coconut milk and pandan leaf, served with a sweet-hot chili sambal, crispy anchovies, peanuts, cucumber and an egg.",["Coconut rice","Pandan leaf","Sambal","Dried anchovies","Peanuts","Cucumber","Boiled egg"]],
+["Chili Crab","SG","Whole mud crab stir-fried in a thick, sweet and spicy tomato-chili gravy, mopped up with fried buns.",["Mud crab","Tomato","Chili","Egg","Garlic","Ginger","Fried mantou buns"]],
+["Rendang","ID","Beef slowly cooked in coconut milk and spice paste for hours until the liquid is gone and the meat is dark, dry and tender.",["Beef","Coconut milk","Lemongrass","Galangal","Chili","Turmeric leaf","Kaffir lime leaf","Toasted coconut"]],
+["Adobo","PH","Meat braised in vinegar, soy sauce, garlic and bay leaves until tender, then often fried for crispy edges. Every family claims its own version.",["Chicken or pork","Cane vinegar","Soy sauce","Garlic","Bay leaves","Black peppercorns","Rice"]],
+["Masala Dosa","IN","A huge, thin, crispy crêpe of fermented rice and lentil batter, rolled around spiced potato and served with coconut chutney and lentil stew.",["Rice","Urad dal","Potato","Mustard seeds","Curry leaves","Turmeric","Coconut chutney","Sambar"]],
+["Nihari","PK","Beef shank stewed overnight on a low flame into a thick, spicy gravy, originally eaten right after the dawn prayer.",["Beef shank","Bone marrow","Wheat flour","Ginger","Fennel","Long pepper","Naan","Green chili"]],
+["Momo","NP","Pleated steamed dumplings filled with spiced buffalo or chicken, served with a tangy tomato-sesame dipping sauce. Found in Himalayan towns.",["Flour","Buffalo or chicken mince","Onion","Ginger","Garlic","Timur pepper","Tomato achar"]],
+["Ema Datshi","BT","A very hot stew where large green chilies are the main vegetable, simmered in a melted local cheese. Served with red rice.",["Green chilies","Datshi cheese","Onion","Tomato","Garlic","Red rice"]],
+["Kottu Roti","LK","Flatbread chopped up noisily on a hot griddle with two metal blades, mixed with vegetables, egg, meat and curry sauce.",["Godhamba roti","Egg","Chicken curry","Leeks","Cabbage","Carrot","Chili"]],
+["Mole Poblano","MX","A dark sauce of dried chilies, nuts, seeds, spices and a little chocolate, ground together and simmered for hours, poured over turkey.",["Turkey","Ancho chilies","Mulato chilies","Chocolate","Sesame seeds","Almonds","Plantain","Cinnamon"]],
+["Pupusas","SV","Thick corn tortillas stuffed with cheese, beans or pork, griddled and topped with pickled cabbage slaw and tomato salsa.",["Masa harina","Quesillo cheese","Refried beans","Chicharrón","Loroco flower","Curtido slaw","Tomato salsa"]],
+["Gallo Pinto","CR","Rice and black beans fried together with onion and pepper, seasoned with a tangy brown sauce, and eaten for breakfast with eggs and plantain.",["Rice","Black beans","Onion","Sweet pepper","Coriander","Salsa Lizano","Eggs","Plantain"]],
+["Ropa Vieja","CU","Beef braised and shredded into strands, stewed with tomato, peppers and onion. The name means \"old clothes\".",["Flank steak","Tomato","Bell peppers","Onion","Cumin","Olives","White rice","Black beans"]],
+["Jerk Chicken","JM","Chicken marinated in a fiery paste of allspice and hot peppers, then smoked slowly over pimento wood.",["Chicken","Scotch bonnet","Allspice","Thyme","Spring onion","Garlic","Pimento wood","Rice and peas"]],
+["Mofongo","PR","Fried green plantains mashed in a wooden pestle with garlic and crispy pork crackling, shaped into a dome.",["Green plantains","Garlic","Chicharrón","Olive oil","Broth"]],
+["Arepas","VE","Round griddled corn cakes split open like a pocket and stuffed with fillings such as shredded beef, black beans and white cheese.",["Precooked corn flour","Shredded beef","Black beans","Queso blanco","Avocado","Chicken"]],
+["Bandeja Paisa","CO","A huge mountain-region platter of beans, rice, ground meat, pork crackling, chorizo, fried egg, plantain, arepa and avocado.",["Red beans","Rice","Ground beef","Chicharrón","Chorizo","Fried egg","Plantain","Avocado"]],
+["Ceviche","PE","Raw white fish cured in fresh lime juice with red onion and hot chili, served with sweet potato and large corn kernels.",["Sea bass","Lime juice","Red onion","Ají limo chili","Coriander","Sweet potato","Choclo corn"]],
+["Llapingachos","EC","Potato patties stuffed with cheese and fried, served with a peanut sauce, chorizo, fried egg and avocado.",["Potatoes","Cheese","Achiote","Peanut sauce","Chorizo","Fried egg","Avocado"]],
+["Feijoada","BR","A slow-cooked stew of black beans and many cuts of pork, served with rice, toasted cassava flour, collard greens and orange slices.",["Black beans","Pork ribs","Sausage","Bacon","Farofa","Collard greens","Rice","Orange"]],
+["Asado","AR","A social ritual of beef ribs, sausages and offal slowly grilled over wood embers, served with a green herb sauce.",["Beef short ribs","Chorizo","Morcilla","Sweetbreads","Salt","Chimichurri","Charcoal"]],
+["Chivito","UY","A towering steak sandwich with ham, mozzarella, bacon, a fried egg, lettuce and tomato, usually served with fries.",["Thin beef steak","Ham","Mozzarella","Bacon","Fried egg","Lettuce","Tomato","Mayonnaise"]],
+["Pastel de Choclo","CL","A clay-dish bake of minced beef, chicken, olives and egg under a sweet, golden crust of puréed fresh corn.",["Fresh corn","Minced beef","Chicken","Black olives","Hard-boiled egg","Raisins","Basil","Sugar"]],
+["Salteñas","BO","Baked pastries filled with a juicy, slightly sweet meat stew. The trick is to eat one without spilling the broth inside.",["Pastry dough","Beef or chicken","Potato","Peas","Gelatin broth","Raisins","Olives","Ají"]],
+["Sopa Paraguaya","PY","Despite its name meaning soup, this is a solid, cheesy cornbread made with onions and fresh cheese.",["Cornmeal","Onion","Fresh cheese","Eggs","Milk","Lard"]],
+["Poutine","CA","Crispy fries covered with fresh cheese curds that squeak, all soaked in hot brown gravy.",["French fries","Cheese curds","Brown gravy"]],
+["Gumbo","US","A thick stew from the bayou built on a dark roux and the \"holy trinity\" of vegetables, with sausage, seafood and okra over rice.",["Dark roux","Andouille sausage","Shrimp","Okra","Celery","Bell pepper","Onion","Filé powder"]],
+["Hāngī","NZ","Meat and vegetables placed in baskets on hot stones in a pit, covered with earth and steamed for hours.",["Lamb","Pork","Chicken","Kūmara (sweet potato)","Pumpkin","Cabbage","Stuffing"]],
+["Lamington","AU","Squares of sponge cake dipped in chocolate and rolled in desiccated coconut, sometimes with a layer of jam.",["Sponge cake","Chocolate icing","Desiccated coconut","Raspberry jam"]],
+["Kokoda","FJ","Raw fish cured in lime juice and finished with fresh coconut cream and chili, often served in a coconut shell.",["Mahi-mahi","Lime juice","Coconut cream","Chili","Tomato","Onion","Cucumber"]],
+];
+const WIKI_TITLES = {"Machboos": "Machboos", "Kabsa": "Kabsa", "Al Harees": "Harees", "Shuwa": "Shuwa", "Saltah": "Saltah", "Mansaf": "Mansaf", "Musakhan": "Musakhan", "Tabbouleh": "Tabbouleh", "Masgouf": "Masgouf", "Fesenjan": "Fesenjan", "İskender Kebap": "İskender kebap", "Koshari": "Koshary", "Pastilla": "Pastilla", "Brik": "Brik", "Doro Wat": "Doro wat", "Egusi Soup": "Egusi soup", "Waakye": "Waakye", "Thieboudienne": "Thieboudienne", "Nyama Choma": "Nyama choma", "Bobotie": "Bobotie", "Sadza ne Nyama": "Sadza", "Romazava": "Romazava", "Moambe Chicken": "Moambe chicken", "Ndolé": "Ndolé", "Muamba de Galinha": "Muamba de galinha", "Cachupa": "Cachupa", "Pastel de Nata": "Pastel de nata", "Paella": "Paella", "Coq au Vin": "Coq au vin", "Cacio e Pepe": "Cacio e pepe", "Sauerbraten": "Sauerbraten", "Kaiserschmarrn": "Kaiserschmarrn", "Fondue": "Fondue", "Moussaka": "Moussaka", "Gulyás": "Goulash", "Pierogi": "Pierogi", "Svíčková": "Svíčková", "Bryndzové Halušky": "Bryndzové halušky", "Borscht": "Borscht", "Pelmeni": "Pelmeni", "Sarmale": "Sarma (food)", "Banitsa": "Banitsa", "Ćevapi": "Ćevapi", "Smørrebrød": "Smørrebrød", "Köttbullar": "Köttbullar", "Fårikål": "Fårikål", "Karjalanpiirakka": "Karelian pasty", "Stamppot": "Stamppot", "Moules-Frites": "Moules-frites", "Colcannon": "Colcannon", "Shepherd's Pie": "Shepherd's pie", "Hákarl": "Hákarl", "Pastizzi": "Pastizz", "Khachapuri": "Khachapuri", "Plov": "Pilaf", "Beshbarmak": "Beshbarmak", "Buuz": "Buuz", "Mapo Tofu": "Mapo tofu", "Okonomiyaki": "Okonomiyaki", "Bibimbap": "Bibimbap", "Phở": "Pho", "Som Tam": "Som tam", "Larb": "Larb", "Fish Amok": "Amok trey", "Mohinga": "Mohinga", "Nasi Lemak": "Nasi lemak", "Chili Crab": "Chilli crab", "Rendang": "Rendang", "Adobo": "Philippine adobo", "Masala Dosa": "Masala dosa", "Nihari": "Nihari", "Momo": "Momo (food)", "Ema Datshi": "Ema datshi", "Kottu Roti": "Kottu", "Mole Poblano": "Mole poblano", "Pupusas": "Pupusa", "Gallo Pinto": "Gallo pinto", "Ropa Vieja": "Ropa vieja", "Jerk Chicken": "Jerk (cooking)", "Mofongo": "Mofongo", "Arepas": "Arepa", "Bandeja Paisa": "Bandeja paisa", "Ceviche": "Ceviche", "Llapingachos": "Llapingacho", "Feijoada": "Feijoada", "Asado": "Asado", "Chivito": "Chivito (sandwich)", "Pastel de Choclo": "Pastel de choclo", "Salteñas": "Salteña", "Sopa Paraguaya": "Sopa paraguaya", "Poutine": "Poutine", "Gumbo": "Gumbo", "Hāngī": "Hāngī", "Lamington": "Lamington", "Kokoda": "Kokoda (food)"};
+
+const MAX = 5, REVEAL_AT = 2;
+const API = "https://en.wikipedia.org/w/api.php";
+const REST = "https://en.wikipedia.org/api/rest_v1/";
+const $ = id => document.getElementById(id);
+const flag = c => c.toUpperCase().replace(/./g, ch => String.fromCodePoint(127397 + ch.charCodeAt()));
+const rad = d => d*Math.PI/180, deg = r => r*180/Math.PI;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const norm = s => s.normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().trim();
+const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+
+function distance(a,b){
+  const R=6371, dLa=rad(b.la-a.la), dLo=rad(b.lo-a.lo);
+  const h=Math.sin(dLa/2)**2+Math.cos(rad(a.la))*Math.cos(rad(b.la))*Math.sin(dLo/2)**2;
+  return 2*R*Math.asin(Math.sqrt(h));
+}
+function bearing(a,b){
+  const y=Math.sin(rad(b.lo-a.lo))*Math.cos(rad(b.la));
+  const x=Math.cos(rad(a.la))*Math.sin(rad(b.la))-Math.sin(rad(a.la))*Math.cos(rad(b.la))*Math.cos(rad(b.lo-a.lo));
+  return (deg(Math.atan2(y,x))+360)%360;
+}
+function temp(km){
+  if(km===0) return ["correct","Correct ✓"];
+  if(km<1000) return ["hot","Hot 🔥"];
+  if(km<2500) return ["warm","Warm"];
+  if(km<5000) return ["cool","Cool"];
+  if(km<9000) return ["cold","Cold ❄️"];
+  return ["freeze","Freezing 🧊"];
+}
+
+// ---------- country name matching + redaction ----------
+const NAME_TO_CODE = new Map();   // normalized name/alias -> code (only names of countries, for list parsing)
+COUNTRIES.forEach(c=>NAME_TO_CODE.set(norm(c.n),c.c));
+"GB:United Kingdom,UK,Britain,Great Britain,England,Scotland,Wales,Northern Ireland|US:United States of America,USA,America|CZ:Czech Republic|CI:Ivory Coast,Cote d'Ivoire|CD:Democratic Republic of the Congo,DRC,Congo-Kinshasa|CG:Republic of the Congo,Congo-Brazzaville,Congo|MM:Burma|TL:East Timor|SZ:Swaziland|MK:Macedonia|TR:Türkiye,Turkiye|CV:Cabo Verde|GM:The Gambia|BS:The Bahamas|KR:Korea,Republic of Korea|KP:Democratic People's Republic of Korea|CN:People's Republic of China|TW:Republic of China|VN:Viet Nam|RU:Russian Federation|NL:Holland,The Netherlands|PS:State of Palestine|AE:UAE|BA:Bosnia|FM:Micronesia"
+  .split("|").forEach(g=>{const [c,l]=g.split(":"); if(BY_CODE[c]) l.split(",").forEach(n=>NAME_TO_CODE.set(norm(n),c));});
+const NAME_KEYS = [...NAME_TO_CODE.keys()].sort((a,b)=>b.length-a.length);
+
+const REDACT_TERMS = new Set();
+COUNTRIES.forEach(c=>REDACT_TERMS.add(c.n));
+Object.values(ALIASES).forEach(l=>l.split(",").forEach(t=>REDACT_TERMS.add(t.trim())));
+DEMONYMS.split(";").forEach(g=>g.split("|")[1].split(",").forEach(t=>REDACT_TERMS.add(t.trim())));
+HINT_WORDS.split(",").forEach(t=>REDACT_TERMS.add(t.trim()));
+REDACT_TERMS.add("Congo");
+const REDACT_RE = new RegExp("(?<![\\p{L}\\p{M}])(?:"+[...REDACT_TERMS].filter(Boolean).sort((a,b)=>b.length-a.length).map(reEsc).join("|")+")(?:s|es)?(?![\\p{L}\\p{M}])","giu");
+const MASK = "▇▇▇";
+
+function redact(text, dishName, alsoTitle){
+  let t = text;
+  // strip parentheses (native-script names, pronunciations, language tags)
+  for(let i=0;i<4;i++) t = t.replace(/\s*\([^()]*\)/g,"");
+  const names = [dishName, alsoTitle].filter(Boolean);
+  for(const n of names){
+    t = t.replace(new RegExp(reEsc(n)+"(?:e?s)?(?![\\p{L}])","giu"),"This dish");
+    n.split(/[\s\-–,]+/).filter(w=>w.length>=4).forEach(w=>{ t=t.replace(new RegExp("(?<![\\p{L}])"+reEsc(w)+"(?![\\p{L}])","giu"),"•••"); });
+  }
+  t = t.replace(REDACT_RE, MASK);
+  t = t.replace(/\b(an?|the)\s+This dish/gi, (m,a)=>a[0]===a[0].toUpperCase()?"This dish":"this dish");
+  t = t.replace(/([.!?]\s+|^)this dish/g, "$1This dish").replace(/(\S\s+)This dish/g, (m,p)=>/[.!?]\s+$/.test(p)?m:p+"this dish");
+  return t.replace(/\s{2,}/g," ").trim();
+}
+
+// ---------- Wikipedia helpers ----------
+async function api(params){
+  const u = API+"?"+new URLSearchParams({format:"json",formatversion:"2",origin:"*",...params});
+  const r = await fetch(u);
+  if(!r.ok) throw new Error("Wikipedia "+r.status);
+  return r.json();
+}
+function resolveTitle(q, title){
+  let t=title;
+  const seen=new Set();
+  for(const list of [q.normalized||[], q.redirects||[]]) for(const x of list) if(x.from===t){ t=x.to; }
+  // redirects can chain after normalisation
+  for(const x of (q.redirects||[])) if(x.from===t && !seen.has(t)){ seen.add(t); t=x.to; }
+  return t;
+}
+function biggerThumb(src, origW, want=960){
+  if(!src) return src;
+  if(/\/thumb\//.test(src) && origW && origW>want) return src.replace(/\/\d+px-/, "/"+want+"px-");
+  return src;
+}
+function fileCredit(pageimage){ return pageimage ? "https://commons.wikimedia.org/wiki/File:"+encodeURIComponent(pageimage) : null; }
+
+// Fetch photos for many titles at once (50 per request).
+async function photosFor(titles){
+  const out = {};
+  for(let i=0;i<titles.length;i+=50){
+    const chunk = titles.slice(i,i+50);
+    try{
+      const j = await api({action:"query",prop:"pageimages",piprop:"thumbnail|name|original",pithumbsize:"800",redirects:"1",titles:chunk.join("|")});
+      const q = j.query||{};
+      const byTitle = Object.fromEntries((q.pages||[]).map(p=>[p.title,p]));
+      for(const t of chunk){
+        const p = byTitle[resolveTitle(q,t)];
+        if(p && p.thumbnail) out[t] = {img:p.thumbnail.source, credit:fileCredit(p.pageimage), page:p.title, file:p.pageimage};
+      }
+    }catch(e){ console.warn(e); }
+  }
+  return out;
+}
+
+// ---------- dish pool ----------
+// Each dish: {name, code, desc, ing, wiki, img, credit, page, live, ready}
+const POOL = DISHES.map(([name,code,desc,ing])=>({name,code,desc,ing,wiki:WIKI_TITLES[name]||name,live:false,ready:false}));
+const seenPages = new Set();
+
+async function loadCuratedPhotos(){
+  const titles = POOL.map(d=>d.wiki);
+  const res = await photosFor(titles);
+  const fileUse = {};
+  POOL.forEach(d=>{ const r=res[d.wiki]; if(r){ Object.assign(d,{img:r.img,credit:r.credit,page:r.page}); seenPages.add(r.page); fileUse[r.file]=(fileUse[r.file]||0)+1; } });
+  // If two dishes share one photo (e.g. both redirect to one article), keep it on the first only.
+  const used = new Set();
+  POOL.forEach(d=>{ if(!d.img) return; const f=d.credit; if(used.has(f)){ d.img=null; } else used.add(f); });
+}
+
+// Parse Wikipedia's "National dish" article into country -> dish titles.
+async function loadLiveList(){
+  const r = await fetch(REST+"page/html/National_dish");
+  if(!r.ok) throw new Error("Wikipedia "+r.status);
+  const doc = new DOMParser().parseFromString(await r.text(), "text/html");
+  const items = [...doc.querySelectorAll("li, tr, p")];
+  const found = [];
+  for(const el of items){
+    if(el.closest(".reflist, .references, .navbox, .toc, .hatnote, .sidebar, .infobox")) continue;
+    // own text only (skip nested lists, they are handled separately)
+    const clone = el.cloneNode(true); clone.querySelectorAll("ul,ol,sup").forEach(n=>n.remove());
+    const txt = norm(clone.textContent.replace(/\s+/g," "));
+    if(!txt) continue;
+    const key = NAME_KEYS.find(k=>txt.startsWith(k) && !/[a-z]/.test(txt.charAt(k.length)));
+    if(!key) continue;
+    const code = NAME_TO_CODE.get(key);
+    const links = [...clone.querySelectorAll("a[href^='/wiki/'], a[href^='./']")]
+      .map(a=>a.getAttribute("title")||"")
+      .filter(t=>t && !t.includes(":") && !NAME_TO_CODE.has(norm(t)) && !/cuisine|culture of|list of|national|flag of|demographics|history of|wikipedia/i.test(t));
+    links.slice(0,4).forEach(t=>found.push({code,wiki:t}));
+  }
+  return found;
+}
+
+async function htmlIngredients(title){
+  const r = await fetch(REST+"page/html/"+encodeURIComponent(title.replace(/ /g,"_")));
+  if(!r.ok) return [];
+  const doc = new DOMParser().parseFromString(await r.text(),"text/html");
+  const th = [...doc.querySelectorAll(".infobox th, table th")].find(t=>/main ingredient/i.test(t.textContent));
+  const td = th && th.parentElement.querySelector("td");
+  if(!td) return [];
+  td.querySelectorAll("sup, style").forEach(n=>n.remove());
+  td.querySelectorAll("br").forEach(n=>n.replaceWith(","));
+  return td.textContent.split(/,|;|\band\b|\bor\b|\//).map(x=>x.trim().replace(/^[\-–•*]\s*/,"")).filter(x=>x && x.length<40).slice(0,9)
+          .map(x=>x.charAt(0).toUpperCase()+x.slice(1));
+}
+const FOODY = /\b(dish|dishes|soup|stew|bread|pastry|pastries|cake|dessert|salad|sandwich|porridge|pie|dumpling|sausage|curry|snack|street food|noodle|rice|pancake|sweet|confection|delicacy|cheese|sauce|meal|cookie|biscuit|casserole|flatbread|pudding|tart|fritter|kebab|barbecue|grilled|fried|roast|stuffed|cured|fermented|appetizer|breakfast|spread|dip|omelette|skewer|bun|wrap|taco|pasta)\b/i;
+const GENERIC = /^(meat|species|genus|family|plant|fruit|vegetable|cereal|grain|animal|domesticated|edible|type of (meat|plant|fruit|vegetable))\b/i;
+function infoboxIngredients(wikitext){
+  const m = wikitext.match(/\|\s*main[_ ]ingredients?\s*=\s*([^\n]*)/i);
+  if(!m) return [];
+  let s = m[1];
+  s = s.replace(/<ref[^>]*\/>/g,"").replace(/<ref[\s\S]*?<\/ref>/g,"").replace(/<br\s*\/?>/gi,",")
+       .replace(/\{\{[^{}]*\}\}/g,"").replace(/\[\[(?:[^|\]]*\|)?([^\]]+)\]\]/g,"$1").replace(/'''?/g,"").replace(/<[^>]+>/g,"");
+  return s.split(/,|;|\band\b|\bor\b|\//).map(x=>x.trim().replace(/^[\-–•*]\s*/,"")).filter(x=>x && x.length<40).slice(0,9)
+          .map(x=>x.charAt(0).toUpperCase()+x.slice(1));
+}
+
+// Fill in description, ingredients and photo for a live dish.
+async function hydrate(d){
+  if(d.ready) return d;
+  if(d.failed) throw new Error("skip");
+  try{
+    const r = await fetch(REST+"page/summary/"+encodeURIComponent(d.wiki.replace(/ /g,"_")));
+    if(!r.ok) throw new Error("summary "+r.status);
+    const s = await r.json();
+    if(s.type!=="standard" || !s.thumbnail || !s.extract) throw new Error("unusable");
+    if(seenPages.has(s.title)) throw new Error("duplicate");
+    if(d.live){
+      const desc = (s.description||"")+" "+s.extract.slice(0,200);
+      if(!FOODY.test(desc) || GENERIC.test(s.description||"")) throw new Error("not a dish");
+    }
+    seenPages.add(s.title);
+    if(!d.live){
+      d.page = s.title;
+      d.img = biggerThumb(s.thumbnail.source, s.originalimage && s.originalimage.width);
+      d.credit = s.content_urls && s.content_urls.desktop ? s.content_urls.desktop.page : null;
+      d.ready = true;
+      return d;
+    }
+    d.name = s.title.replace(/\s*\(.*?\)\s*$/,"");
+    d.page = s.title;
+    d.img = biggerThumb(s.thumbnail.source, s.originalimage && s.originalimage.width);
+    d.credit = s.content_urls && s.content_urls.desktop ? s.content_urls.desktop.page : null;
+    const sentences = s.extract.replace(/\s+/g," ").match(/[^.!?]+[.!?]+/g) || [s.extract];
+    let desc = redact(sentences.slice(0,3).join(" "), d.name, d.wiki);
+    if(desc.length>420) desc = desc.slice(0,400).replace(/\s\S*$/,"")+"…";
+    d.desc = desc;
+    try{ d.ing = (await htmlIngredients(s.title)).map(x=>redact(x,d.name,d.wiki)); }
+    catch(e){ d.ing = []; }
+    d.ready = true;
+    return d;
+  }catch(e){ d.failed = true; throw e; }
+}
+
+// ---------- stats ----------
+let stats = {streak:0,best:0,won:0,played:0};
+try{ const s=JSON.parse(localStorage.getItem("plateatlas-stats")); if(s) stats={...stats,...s}; }catch(e){}
+function saveStats(){ try{localStorage.setItem("plateatlas-stats",JSON.stringify(stats));}catch(e){} renderStats(); }
+function renderStats(){ $("sStreak").textContent=stats.streak; $("sBest").textContent=stats.best; $("sWon").textContent=`${stats.won}/${stats.played}`; }
+
+// ---------- game state ----------
+let S = {bag:[], dish:null, round:0, guesses:[], status:"loading"};
+function shuffle(a){ for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; }
+function playable(d){ return !d.failed; }
+function refill(){ return shuffle(POOL.filter(playable)); }
+
+async function nextDish(){
+  S.status="loading"; render();
+  for(let tries=0; tries<25; tries++){
+    if(!S.bag.length) S.bag = refill();
+    const d = S.bag.pop();
+    if(!d) break;
+    try{ await hydrate(d); }catch(e){ continue; }
+    S.dish=d; S.guesses=[]; S.status="playing"; S.round++;
+    render(); $("guess").value=""; $("guess").focus({preventScroll:true});
+    prefetch();
+    return;
+  }
+  $("dishNo").textContent="Couldn't load a dish";
+  $("dishDesc").textContent="Wikipedia didn't respond. Check your connection and reload the page.";
+}
+function prefetch(){
+  const n = S.bag[S.bag.length-1];
+  if(!n) return;
+  hydrate(n).then(d=>{ if(d.img){ const i=new Image(); i.src=d.img; } }).catch(()=>{ S.bag.pop(); prefetch(); });
+}
+
+function setPhoto(d){
+  const ph=$("photo"), img=$("dishImg"), cr=$("credit"), no=$("nophoto");
+  if(!d){ ph.className="photo loading"; img.classList.remove("ready"); img.removeAttribute("src"); no.hidden=true; cr.hidden=true; return; }
+  if(d.img){
+    no.hidden=true;
+    if(img.getAttribute("src")!==d.img){
+      img.classList.remove("ready"); ph.className="photo loading";
+      img.onload=()=>{ img.classList.add("ready"); ph.className="photo"; };
+      img.onerror=()=>{ ph.className="photo"; no.hidden=false; };
+      img.src=d.img;
+    }
+  }else{ img.removeAttribute("src"); ph.className="photo"; no.hidden=false; }
+  cr.href = d.credit || "#";
+  cr.textContent = d.live ? "Photo & text: Wikipedia" : "Photo: Wikipedia";
+  cr.hidden = S.status==="playing" || !d.credit;
+}
+
+function render(){
+  const d = S.dish;
+  if(S.status==="loading"){
+    setPhoto(null);
+    $("dishNo").textContent = S.round ? `Dish ${S.round+1}` : "Loading…";
+    $("dishName").className="dish-name locked"; $("dishName").textContent="Plating up the next dish…";
+    $("dishDesc").textContent=""; $("dishIng").innerHTML="";
+    $("guessBox").hidden=true; $("result").hidden=true; $("guesses").innerHTML="";
+    return;
+  }
+  const {name,code,desc,ing} = d;
+  const wrong=S.guesses.filter(g=>g!==code).length;
+  $("dishNo").textContent=`Dish ${S.round}`;
+  setPhoto(d);
+  const nameEl=$("dishName");
+  const show = wrong>=REVEAL_AT || S.status!=="playing";
+  if(show){
+    const wasLocked = nameEl.classList.contains("locked");
+    nameEl.className="dish-name"+(wasLocked?" reveal":"");
+    nameEl.textContent=name;
+  }else{
+    nameEl.className="dish-name locked";
+    const left=REVEAL_AT-wrong;
+    nameEl.innerHTML=`<span class="bars"><i style="width:70px"></i><i style="width:46px"></i></span> Name revealed after ${left} more wrong ${left===1?"guess":"guesses"}`;
+  }
+  $("dishDesc").innerHTML = esc(desc).replaceAll(MASK,`<span class="redact" title="Hidden so it doesn't give the answer away">${MASK}</span>`);
+  $("dishIng").innerHTML = ing && ing.length
+    ? ing.map(i=>`<span class="chip">${esc(i).replaceAll(MASK,'<span class="redact">'+MASK+'</span>')}</span>`).join("")
+    : `<span class="chip" style="color:var(--muted)">Not listed for this dish. Use the photo!</span>`;
+
+  const won=S.status==="won";
+  $("pips").innerHTML=Array.from({length:MAX},(_,i)=>{
+    let c="pip"; if(i<S.guesses.length) c+= (won&&i===S.guesses.length-1)?" win":" used"; return `<span class="${c}"></span>`;
+  }).join("");
+  $("left").textContent=MAX-S.guesses.length;
+
+  const ans=BY_CODE[code];
+  $("guesses").innerHTML=S.guesses.slice().reverse().map(gc=>{
+    const g=BY_CODE[gc];
+    const km = gc===code?0:Math.round(distance(g,ans));
+    const [cls,label]=temp(km);
+    const b = Math.round(bearing(g,ans));
+    const comp = km===0 ? `<div class="check">✓</div>` :
+      `<svg viewBox="0 0 24 24" style="transform:rotate(${b}deg)" aria-hidden="true"><path d="M12 2 L17 20 L12 16 L7 20 Z" fill="var(--hot)"/></svg>`;
+    return `<div class="g">
+      <div class="flag" aria-hidden="true">${flag(gc)}</div>
+      <div class="nm"><strong>${esc(g.n)}</strong></div>
+      <span class="pill ${cls}">${label}</span>
+      <div class="compass" aria-label="${km===0?"Correct":"Direction "+b+" degrees"}"><span class="n">N</span><span class="e">E</span><span class="s">S</span><span class="w">W</span>${comp}</div>
+    </div>`;
+  }).join("");
+
+  const over=S.status!=="playing";
+  $("guess").disabled=over; $("submit").disabled=over;
+  $("guessBox").hidden=over;
+  const r=$("result");
+  if(over){
+    r.hidden=false;
+    r.className="result "+(won?"win":"lose");
+    const more = d.page ? ` <a href="https://en.wikipedia.org/wiki/${encodeURIComponent(d.page.replace(/ /g,"_"))}" target="_blank" rel="noopener">Read about it</a>` : "";
+    r.innerHTML = won
+      ? `<h2>${flag(code)} Correct, it's ${esc(ans.n)}!</h2><p><strong>${esc(name)}</strong> solved in ${S.guesses.length} ${S.guesses.length===1?"guess":"guesses"}.${more}</p><button class="btn" id="next">Next dish →</button>`
+      : `<h2>${flag(code)} It was ${esc(ans.n)}</h2><p>Out of guesses. <strong>${esc(name)}</strong> comes from ${esc(ans.n)}.${more}</p><button class="btn" id="next">Next dish →</button>`;
+    $("next").onclick=()=>nextDish();
+    $("next").focus({preventScroll:true});
+  }else{ r.hidden=true; }
+}
+
+function submitGuess(code){
+  if(S.status!=="playing") return;
+  const msg=$("msg"); msg.textContent="";
+  if(!code){ msg.textContent="Pick a country from the list."; return; }
+  if(S.guesses.includes(code)){ msg.textContent=`You already guessed ${BY_CODE[code].n}.`; return; }
+  S.guesses.push(code);
+  const ans=S.dish.code;
+  if(code===ans){ S.status="won"; stats.played++; stats.won++; stats.streak++; stats.best=Math.max(stats.best,stats.streak); saveStats(); }
+  else if(S.guesses.length>=MAX){ S.status="lost"; stats.played++; stats.streak=0; saveStats(); }
+  $("guess").value=""; closeList(); render();
+}
+
+// ---------- autocomplete ----------
+const input=$("guess"), list=$("list");
+let matches=[], active=0;
+function openList(){
+  const q=norm(input.value);
+  if(!q){ closeList(); return; }
+  matches=COUNTRIES.filter(c=>norm(c.n).includes(q))
+    .sort((a,b)=>(norm(a.n).startsWith(q)?0:1)-(norm(b.n).startsWith(q)?0:1)||a.n.localeCompare(b.n)).slice(0,8);
+  active=0;
+  if(!matches.length){ list.innerHTML=`<li class="opt" style="pointer-events:none;color:var(--muted)">No country matches “${esc(input.value)}”</li>`; list.hidden=false; return; }
+  list.innerHTML=matches.map((c,i)=>`<li class="opt${S.guesses.includes(c.c)?" used":""}" role="option" id="opt-${c.c}" data-c="${c.c}" aria-selected="${i===active}"><span class="fl">${flag(c.c)}</span>${esc(c.n)}</li>`).join("");
+  list.hidden=false; input.setAttribute("aria-expanded","true");
+}
+function closeList(){ list.hidden=true; input.setAttribute("aria-expanded","false"); }
+function highlight(){ [...list.children].forEach((li,i)=>li.setAttribute("aria-selected",i===active)); list.children[active]?.scrollIntoView({block:"nearest"}); }
+input.addEventListener("input",()=>{ $("msg").textContent=""; openList(); });
+input.addEventListener("keydown",e=>{
+  if(list.hidden||!matches.length) return;
+  if(e.key==="ArrowDown"){ e.preventDefault(); active=(active+1)%matches.length; highlight(); }
+  else if(e.key==="ArrowUp"){ e.preventDefault(); active=(active-1+matches.length)%matches.length; highlight(); }
+  else if(e.key==="Escape"){ closeList(); }
+});
+list.addEventListener("mousedown",e=>{ const li=e.target.closest(".opt[data-c]"); if(li){ e.preventDefault(); submitGuess(li.dataset.c); } });
+input.addEventListener("blur",()=>setTimeout(closeList,120));
+$("form").addEventListener("submit",e=>{
+  e.preventDefault();
+  const q=norm(input.value);
+  const exact=COUNTRIES.find(c=>norm(c.n)===q);
+  const pick = exact ? exact.c : (!list.hidden && matches[active]) ? matches[active].c : null;
+  submitGuess(pick);
+});
+
+// ---------- boot ----------
+(async function start(){
+  renderStats();
+  render();
+  // Live dishes from Wikipedia's national dish list, loaded in the background.
+  const livePromise = loadLiveList().then(items=>{
+    const known = new Set(POOL.map(d=>norm(d.wiki)));
+    let added = 0;
+    for(const it of items){
+      if(known.has(norm(it.wiki))) continue;
+      known.add(norm(it.wiki));
+      POOL.push({name:it.wiki, code:it.code, wiki:it.wiki, live:true, ready:false});
+      added++;
+    }
+    // mix the new dishes into what's left of the current bag
+    S.bag = shuffle(S.bag.concat(POOL.filter(d=>d.live && !d.ready && !d.failed)));
+    $("loadnote").textContent = `${POOL.filter(playable).length} dishes in rotation, ${added} pulled live from Wikipedia.`;
+    return added;
+  }).catch(e=>{ console.warn("Live list failed", e); $("loadnote").textContent="Couldn't reach Wikipedia's dish list, so you're playing the built-in dishes."; });
+  S.bag = refill();
+  await nextDish();
+  await livePromise;
+})();
+</script>
+</body>
+</html>

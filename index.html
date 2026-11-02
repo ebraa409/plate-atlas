@@ -179,6 +179,61 @@ button{font:inherit;cursor:pointer}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
+/* Palette: Light Caramel F0B67F, Vibrant Coral FE5F55, Sand Dune D6D1B1, Tea Green C7EFCF, Beige EEF5DB (background) */
+:root{
+  color-scheme: light;
+  --bg:#EEF5DB;
+  --surface:#F8FBEE;
+  --surface-2:#E6E3CC;
+  --line:#D6D1B1;
+  --fg:#2A2A22;
+  --muted:#6B6852;
+  --accent:#FE5F55;
+  --accent-ink:#2A1210;
+  --caramel:#F0B67F;
+  --tea:#C7EFCF;
+  --hot:#D93A30;
+  --warm:#A8621C;
+  --cool:#2F7A45;
+  --cold:#3F6AA8;
+  --freeze:#5E6E8C;
+  --good:#23824A;
+  --bad:#C9342B;
+}
+body{background:var(--bg);background-image:radial-gradient(1100px 480px at 50% -220px, rgba(240,182,127,.45), transparent 70%)}
+.brand h1 span{color:var(--accent)}
+.dish{box-shadow:0 1px 0 rgba(42,42,34,.04),0 10px 30px -18px rgba(42,42,34,.25)}
+.dish::after{border-color:rgba(240,182,127,.35);box-shadow:inset 0 0 0 22px rgba(199,239,207,.35)}
+.eyebrow{color:#C8463D}
+.desc{color:var(--fg)}
+.chip{background:var(--tea);border-color:transparent;color:#1F4A2C}
+#guess{background:#fff}
+#guess:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(254,95,85,.22)}
+.btn{background:var(--accent);color:#fff;text-shadow:0 1px 0 rgba(0,0,0,.12)}
+.btn:focus-visible,.opt:focus-visible{outline-color:var(--fg)}
+.list{background:#fff;box-shadow:0 18px 40px -12px rgba(42,42,34,.3)}
+.opt[aria-selected="true"],.opt:hover{background:rgba(240,182,127,.3)}
+.pip{background:var(--line)}
+.pip.used{background:linear-gradient(90deg,var(--accent),var(--caramel))}
+.pip.win{background:var(--good)}
+.g{background:var(--surface)}
+.g .flag{background:var(--surface-2)}
+.pill.correct{background:var(--tea);color:var(--good)}
+.pill.hot{background:rgba(254,95,85,.18);color:var(--hot)}
+.pill.warm{background:rgba(240,182,127,.45);color:var(--warm)}
+.pill.cool{background:rgba(199,239,207,.9);color:var(--cool)}
+.pill.cold{background:#DCE6F3;color:var(--cold)}
+.pill.freeze{background:#E3E6EC;color:var(--freeze)}
+.compass svg path{fill:var(--accent)}
+.photo{background:var(--surface-2);z-index:1}
+.photo .credit{background:rgba(248,251,238,.88);color:var(--muted)}
+.photo.loading::before{background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.5) 50%,transparent 70%)!important;background-size:200% 100%!important}
+.result{background:var(--surface)}
+.result.win{border-color:var(--good);background:#E3F6E7}
+.result.lose{border-color:rgba(254,95,85,.55);background:#FDECE6}
+.result a{color:#C8463D}
+.redact{background:var(--line);color:var(--line)}
+.dish-name.locked .bars i{background:var(--line)}
 .photo.loading::before{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.05) 50%,transparent 70%);background-size:200% 100%;animation:shimmer 1.2s linear infinite}
 @keyframes shimmer{from{background-position:200% 0}to{background-position:-200% 0}}
 .photo img{opacity:0;transition:opacity .35s ease}
@@ -188,6 +243,29 @@ button{font:inherit;cursor:pointer}
 .redact{background:var(--surface-2);color:var(--surface-2);border-radius:3px;padding:0 .2em;user-select:none}
 .loadnote{font-size:12px;color:var(--muted);text-align:center;min-height:16px}
 .result a{color:var(--accent)}
+/* names wrap instead of being cut off */
+.g .nm strong{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.25;overflow-wrap:anywhere}
+#guess{scroll-margin-top:12px}
+.list{max-height:min(260px,38vh)}
+@media (max-width:560px){
+  body{padding-block:14px 32px}
+  .wrap{gap:14px}
+  header{flex-wrap:nowrap;align-items:center}
+  .brand h1{font-size:26px}
+  .brand p{display:none}
+  .stats{gap:10px;font-size:10px}
+  .stats b{font-size:15px}
+  .photo{aspect-ratio:16/9}
+  .dish{gap:10px}
+  .dish-name{font-size:24px}
+  .desc{font-size:14.5px}
+  .chip{font-size:12.5px;padding:3px 9px}
+  .status{font-size:14px}
+  .pip{width:22px}
+  .g{grid-template-columns:auto minmax(0,1fr) auto auto;gap:8px}
+  .compass{width:40px;height:40px}
+  .compass svg{width:22px;height:22px}
+}
 </style>
 </head>
 <body>
@@ -778,7 +856,9 @@ async function nextDish(){
     if(!d) break;
     try{ await hydrate(d); }catch(e){ continue; }
     S.dish=d; S.guesses=[]; S.status="playing"; S.round++;
-    render(); $("guess").value=""; $("guess").focus({preventScroll:true});
+    render(); $("guess").value="";
+    if(!matchMedia("(max-width:560px)").matches) $("guess").focus({preventScroll:true});
+    else window.scrollTo({top:0,behavior:"smooth"});
     prefetch();
     return;
   }
@@ -851,7 +931,7 @@ function render(){
     const [cls,label]=temp(km);
     const b = Math.round(bearing(g,ans));
     const comp = km===0 ? `<div class="check">✓</div>` :
-      `<svg viewBox="0 0 24 24" style="transform:rotate(${b}deg)" aria-hidden="true"><path d="M12 2 L17 20 L12 16 L7 20 Z" fill="var(--hot)"/></svg>`;
+      `<svg viewBox="0 0 24 24" style="transform:rotate(${b}deg)" aria-hidden="true"><path d="M12 2 L17 20 L12 16 L7 20 Z" fill="var(--accent)"/></svg>`;
     return `<div class="g">
       <div class="flag" aria-hidden="true">${flag(gc)}</div>
       <div class="nm"><strong>${esc(g.n)}</strong></div>
@@ -904,6 +984,8 @@ function openList(){
 function closeList(){ list.hidden=true; input.setAttribute("aria-expanded","false"); }
 function highlight(){ [...list.children].forEach((li,i)=>li.setAttribute("aria-selected",i===active)); list.children[active]?.scrollIntoView({block:"nearest"}); }
 input.addEventListener("input",()=>{ $("msg").textContent=""; openList(); });
+// On phones, bring the guess box to the top so the keyboard doesn't hide the suggestions.
+input.addEventListener("focus",()=>{ if(matchMedia("(max-width:560px)").matches) setTimeout(()=>input.scrollIntoView({block:"start",behavior:"smooth"}),250); });
 input.addEventListener("keydown",e=>{
   if(list.hidden||!matches.length) return;
   if(e.key==="ArrowDown"){ e.preventDefault(); active=(active+1)%matches.length; highlight(); }
